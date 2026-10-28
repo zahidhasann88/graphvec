@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0 — Unreleased
+## 0.2.0 — 2026-10-28
 
 **Index format 2.** 0.2 reads 0.1 indexes and migrates them to format 2
 on the next `save()`/`compact()`. 0.1 cannot read format 2, so keep a copy
