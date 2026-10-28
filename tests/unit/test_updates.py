@@ -49,9 +49,10 @@ def test_delete_batch_and_compact(tmp_path):
     idx.close()
     idx2 = GraphIndex.open(tmp_path / "i.gvec", readonly=True)
     assert len(idx2) == 47
-    assert {r.id for r in idx2.search(vecs[10], k=10)} == {
-        r.id for r in idx2.search_exact(vecs[10], k=10)
-    } or True
+    approx = idx2.search(vecs[10], k=10, ef_search=100)
+    exact = idx2.search_exact(vecs[10], k=10)
+    assert [r.id for r in approx] == [r.id for r in exact]
+    assert not {"d0", "d1", "d2"} & {r.id for r in approx}
     idx2.close()
 
 
@@ -88,4 +89,12 @@ def test_tombstoned_id_rejected_until_compact(tmp_path):
     idx.compact()
     idx.add(vecs[:1], ids=["d5"])
     assert "d5" in idx
+    idx.close()
+
+
+def test_iter_ids_skips_deleted(tmp_path):
+    idx, _ = seeded_index(tmp_path)
+    idx.delete(["d1", "d3"])
+    ids = list(idx.iter_ids())
+    assert ids[:3] == ["d0", "d2", "d4"] and len(ids) == 48
     idx.close()

@@ -44,10 +44,10 @@ with GraphIndex.open("./vectors.gvec", readonly=True) as index:
 | `add(vectors, ids=None, replace=False)` | Insert vectors; duplicate IDs raise `DuplicateIDError` unless `replace=True` |
 | `search(query, k=10, ef_search=100)` / `search_batch(queries, ...)` | Approximate search; returns `SearchResult(id, score, internal_id)` |
 | `search_exact(query, k=10)` | Brute-force search, useful to measure recall |
-| `get(id)` / `contains(id)` / `delete(ids)` | Read, check, or delete by ID (deletes are tombstones) |
-| `compact()` | Remove deleted rows, rebuild the graph, and save |
-| `build()` | Rebuild the graph from stored vectors |
+| `get(id)` / `contains(id)` / `delete(ids)` / `iter_ids()` | Read, check, delete, or list IDs (deletes are tombstones) |
+| `compact()` / `build()` | Drop deleted rows, rebuild the graph and save / only rebuild the graph |
 | `save()` / `close()` / `validate()` | Commit to disk, release the writer lock, check consistency |
+| `GraphIndex.force_unlock(path)` | Remove a stale writer lock after a crash |
 
 Higher `ef_search` gives better recall but slower queries. All errors inherit from `graphvec.GraphVecError`.
 
@@ -67,6 +67,7 @@ graphvec info ./index.gvec
 graphvec validate ./index.gvec
 graphvec benchmark ./index.gvec --queries queries.npy --top-k 10
 graphvec compact ./index.gvec
+graphvec unlock ./index.gvec                              # after a crashed writer
 graphvec export ./index.gvec --output vectors.npy         # also writes vectors.npy.ids.json
 ```
 
@@ -75,15 +76,14 @@ JSONL records look like `{"id": "doc-1", "vector": [0.1, ...]}`; Parquet files n
 
 ## Limitations
 - The graph and ID map are held in memory; only vectors can be memory-mapped.
-- One writer at a time. A crash can leave a stale `.writer.lock` file to delete by hand.
+- One writer at a time. A crash leaves a stale lock; clear it with `graphvec unlock`.
 - Deleted IDs cannot be reused until `compact()`.
 - Insertion is slow (hundreds of vectors per second in our measurements).
 - More detail and crash-safety guarantees: [docs/limitations.md](docs/limitations.md).
 
 ## Documentation
 
-[Architecture and algorithms](docs/architecture.md) · [File format](docs/file-format.md) ·
-[Benchmarks](docs/benchmarks.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
+[Architecture and algorithms](docs/architecture.md) · [File format](docs/file-format.md) · [Benchmarks](docs/benchmarks.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
 
 ## Development
 

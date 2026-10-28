@@ -88,3 +88,15 @@ def test_cli_rejects_unknown_source(tmp_path):
     (tmp_path / "v.csv").write_text("1,2")
     r = runner.invoke(app, ["import", p, str(tmp_path / "v.csv")])
     assert r.exit_code != 0
+
+
+def test_cli_unlock(tmp_path):
+    p = tmp_path / "l.gvec"
+    assert runner.invoke(app, ["create", str(p), "--dimensions", "4"]).exit_code == 0
+    assert runner.invoke(app, ["unlock", str(p)]).output.strip() == "not locked"
+    (p / ".writer.lock").write_text("123")
+    r = runner.invoke(app, ["unlock", str(p)], input="n\n")
+    assert r.exit_code != 0 and (p / ".writer.lock").exists()
+    r = runner.invoke(app, ["unlock", str(p), "--yes"])
+    assert r.exit_code == 0 and not (p / ".writer.lock").exists()
+    assert runner.invoke(app, ["unlock", str(tmp_path / "missing")]).exit_code == 1

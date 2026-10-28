@@ -42,18 +42,38 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
+LOCK_FILE = ".writer.lock"
+
+
+def read_lock_pid(index_dir: Path) -> int | None:
+    """PID recorded in the writer lock, or None if unlocked or unreadable."""
+    try:
+        return int((index_dir / LOCK_FILE).read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
 def acquire_lock(index_dir: Path) -> Path:
-    lock = index_dir / ".writer.lock"
+    lock = index_dir / LOCK_FILE
     try:
         fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError as exc:
+        pid = read_lock_pid(index_dir)
+        owner = f"process {pid}" if pid is not None else "another writer"
         raise ConcurrentWriterError(
-            f"Index at {index_dir} is locked by another writer ({lock} exists). "
-            "If no writer is running, remove the stale lock file manually."
+            f"Index at {index_dir} is locked by {owner}. If that process is no longer "
+            f"running, remove the stale lock with: graphvec unlock {index_dir}"
         ) from exc
     os.write(fd, str(os.getpid()).encode())
     os.close(fd)
     return lock
+
+
+def force_unlock(index_dir: Path) -> int | None:
+    """Remove the writer lock unconditionally. Returns the PID it recorded."""
+    pid = read_lock_pid(index_dir)
+    release_lock(index_dir / LOCK_FILE)
+    return pid
 
 
 def release_lock(lock: Path | None) -> None:

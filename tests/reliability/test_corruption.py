@@ -81,3 +81,13 @@ def test_insufficient_disk_space_keeps_committed_data(tmp_path, monkeypatch):
     monkeypatch.undo()
     with GraphIndex.open(p, readonly=True, verify_checksums=True) as idx:
         assert len(idx) == 50
+
+
+def test_force_unlock_clears_stale_lock(tmp_path):
+    p = built(tmp_path)
+    (p / ".writer.lock").write_text("999999")  # left behind by a crashed writer
+    with pytest.raises(ConcurrentWriterError, match="999999"):
+        GraphIndex.open(p)
+    assert GraphIndex.force_unlock(p) == 999999
+    assert GraphIndex.force_unlock(p) is None
+    GraphIndex.open(p).close()

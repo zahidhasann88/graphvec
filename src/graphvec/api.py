@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -282,6 +283,13 @@ class GraphIndex:
             raise MissingIDError(f"ID {id!r} not found")
         return np.array(self._vectors[internal], dtype=np.float32)
 
+    def iter_ids(self) -> Iterator[str]:
+        """Yield the IDs of live (non-deleted) vectors in insertion order."""
+        self._ensure_open()
+        for internal, ext in enumerate(self._ids):
+            if not self._deleted[internal]:
+                yield ext
+
     def contains(self, id: str) -> bool:
         self._ensure_open()
         return str(id) in self._id_to_internal
@@ -392,6 +400,19 @@ class GraphIndex:
             "metric": self.metric,
             "graph": diag,
         }
+
+    @staticmethod
+    def force_unlock(path) -> int | None:
+        """Remove a stale writer lock left by a crashed process.
+
+        Only call this when no other process is writing to the index; GraphIndex
+        cannot tell a crashed writer from a running one. Returns the PID recorded
+        in the lock, or None if there was no readable lock.
+        """
+        p = Path(path)
+        if not p.is_dir():
+            raise FileNotFoundError(f"Index directory not found: {p}")
+        return storage.force_unlock(p)
 
     def close(self) -> None:
         if self._closed:

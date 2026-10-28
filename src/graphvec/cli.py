@@ -12,7 +12,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from graphvec import __version__
+from graphvec import __version__, storage
 from graphvec.api import GraphIndex
 from graphvec.exceptions import GraphVecError
 
@@ -259,7 +259,7 @@ def export(
     """Export live vectors to a .npy file (plus <output>.ids.json)."""
     try:
         with GraphIndex.open(path, readonly=True) as idx:
-            ids = [e for e in idx._ids if idx.contains(e)]
+            ids = list(idx.iter_ids())
             vecs = (
                 np.stack([idx.get(e) for e in ids])
                 if ids
@@ -269,6 +269,31 @@ def export(
         Path(output + ".ids.json").write_text(json.dumps(ids))
         console.print(f"exported {len(ids)} vectors to {output}")
     except GraphVecError as e:
+        _fail(e)
+
+
+@app.command()
+def unlock(
+    path: str,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+) -> None:
+    """Remove a stale writer lock left by a crashed process."""
+    try:
+        if not Path(path).is_dir():
+            raise FileNotFoundError(f"Index directory not found: {path}")
+        pid = storage.read_lock_pid(Path(path))
+        if not (Path(path) / storage.LOCK_FILE).exists():
+            console.print("not locked")
+            return
+        owner = f"process {pid}" if pid is not None else "an unknown process"
+        if not yes:
+            typer.confirm(
+                f"Lock is held by {owner}. Remove it? Only do this if that process is not running",
+                abort=True,
+            )
+        GraphIndex.force_unlock(path)
+        console.print("unlocked")
+    except (GraphVecError, FileNotFoundError) as e:
         _fail(e)
 
 

@@ -4,8 +4,10 @@
   grows only with touched pages), but the graph, ID map and (in writable
   mode) a RAM copy of vectors are in memory. Datasets whose *graph* does
   not fit in RAM are out of scope for this release.
-- **Concurrency**: exactly one writer (lock file); stale locks after a
-  crash must be removed manually. Read-only readers may run concurrently,
+- **Concurrency**: exactly one writer (lock file); a crash leaves a stale
+  lock, which `graphvec unlock` (or `GraphIndex.force_unlock()`) removes.
+  GraphIndex cannot tell a crashed writer from a running one, so only
+  unlock when no writer is running. Read-only readers may run concurrently,
   but must reopen to see new commits. No transactional guarantee: crash
   safety = fsync + atomic rename, durability depends on the filesystem/OS.
 - **Deletes**: tombstones; deleted nodes remain traversal waypoints and
