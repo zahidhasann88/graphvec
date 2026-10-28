@@ -46,7 +46,7 @@ def test_cli_roundtrip(tmp_path):
     assert r.exit_code == 0, r.output
     r = runner.invoke(app, ["info", p, "--json"])
     assert r.exit_code == 0 and "16" in r.output
-    assert json.loads(r.output)["format_version"] == 1
+    assert json.loads(r.output)["format_version"] == 2
     r = runner.invoke(
         app, ["search", p, "--query-file", str(tmp_path / "q.npy"), "--top-k", "5", "--json"]
     )

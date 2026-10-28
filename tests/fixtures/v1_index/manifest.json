@@ -1,0 +1,16 @@
+{
+  "checksums": {
+    "graph.bin": "c75e8473b1a7288d6d5a55b6313ca91a000581ab9779f40c9207c44a59b345e1",
+    "ids.bin": "6ddaaa9e0b6ac2c2fbac7680ed7ae0a4d7e2bfa36b4b25494dec1a8b1a78c80c",
+    "tombstones.bin": "cba581b190531491d0a14e80f704b2c9698486189c173366c31cb8331c1ae0da",
+    "vectors.bin": "026494eb5c8539dad8aeb7be519c6ca26f5c892f47fb571457ab4444913d3a75"
+  },
+  "construction_ef": 20,
+  "count": 60,
+  "dimensions": 8,
+  "format_version": 1,
+  "live_count": 58,
+  "max_neighbors": 4,
+  "metric": "cosine",
+  "seed": 42
+}

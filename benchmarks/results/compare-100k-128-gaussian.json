@@ -1,0 +1,119 @@
+{
+  "n": 100000,
+  "dims": 128,
+  "metric": "cosine",
+  "k": 10,
+  "max_neighbors": 16,
+  "construction_ef": 200,
+  "dataset": "gaussian",
+  "threads": 1,
+  "environment": {
+    "graphvec_version": "0.2.0",
+    "python": "3.13.14",
+    "numpy": "2.5.4",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 142 Stepping 12, GenuineIntel",
+    "cpu_count": 8,
+    "ram_gb": 15.8
+  },
+  "engines": {
+    "graphvec": {
+      "build_seconds": 515.2,
+      "insert_vectors_per_sec": 194.1,
+      "insert_rate_last_batch": 181.9,
+      "save_seconds": 0.41,
+      "peak_rss_mb_build": 222.8,
+      "open_readonly_seconds": 0.153,
+      "index_bytes_on_disk": 79067122,
+      "by_ef_search": {
+        "10": {
+          "recall@1": 0.24,
+          "recall@10": 0.174,
+          "p50_ms": 1.307,
+          "p95_ms": 1.721,
+          "p99_ms": 1.828,
+          "qps_single_thread": 752.3
+        },
+        "20": {
+          "recall@1": 0.37,
+          "recall@10": 0.269,
+          "p50_ms": 2.059,
+          "p95_ms": 2.471,
+          "p99_ms": 2.589,
+          "qps_single_thread": 482.9
+        },
+        "50": {
+          "recall@1": 0.53,
+          "recall@10": 0.439,
+          "p50_ms": 3.209,
+          "p95_ms": 3.745,
+          "p99_ms": 3.919,
+          "qps_single_thread": 314.0
+        },
+        "100": {
+          "recall@1": 0.71,
+          "recall@10": 0.572,
+          "p50_ms": 4.444,
+          "p95_ms": 4.969,
+          "p99_ms": 5.216,
+          "qps_single_thread": 222.5
+        },
+        "200": {
+          "recall@1": 0.81,
+          "recall@10": 0.726,
+          "p50_ms": 6.746,
+          "p95_ms": 7.88,
+          "p99_ms": 8.247,
+          "qps_single_thread": 148.9
+        }
+      }
+    },
+    "faiss_hnsw": {
+      "version": "1.15.1",
+      "build_seconds": 52.4,
+      "insert_vectors_per_sec": 1909.6,
+      "by_ef_search": {
+        "10": {
+          "recall@1": 0.08,
+          "recall@10": 0.066,
+          "p50_ms": 0.053,
+          "p95_ms": 0.071,
+          "p99_ms": 0.08,
+          "qps_single_thread": 18183.8
+        },
+        "20": {
+          "recall@1": 0.12,
+          "recall@10": 0.095,
+          "p50_ms": 0.081,
+          "p95_ms": 0.11,
+          "p99_ms": 0.116,
+          "qps_single_thread": 11794.8
+        },
+        "50": {
+          "recall@1": 0.27,
+          "recall@10": 0.209,
+          "p50_ms": 0.173,
+          "p95_ms": 0.214,
+          "p99_ms": 0.226,
+          "qps_single_thread": 5684.9
+        },
+        "100": {
+          "recall@1": 0.4,
+          "recall@10": 0.356,
+          "p50_ms": 0.32,
+          "p95_ms": 0.378,
+          "p99_ms": 0.39,
+          "qps_single_thread": 3077.2
+        },
+        "200": {
+          "recall@1": 0.59,
+          "recall@10": 0.518,
+          "p50_ms": 0.587,
+          "p95_ms": 0.665,
+          "p99_ms": 0.679,
+          "qps_single_thread": 1672.1
+        }
+      }
+    }
+  }
+}

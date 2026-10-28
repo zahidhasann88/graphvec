@@ -17,10 +17,22 @@ All code is in `src/graphvec/`:
 contiguous float32 array (capacity doubles as needed), and inserts each row
 into the graph. `save()` writes each data file to `*.tmp`, fsyncs it,
 atomically replaces the old file, then writes `manifest.json` last. The
-manifest is the commit point. `open(readonly=True)` memory-maps
-`vectors.bin`; the graph and ID tables are loaded into RAM. Only one writer
-is allowed (`.writer.lock`, created with `O_EXCL`); many read-only readers can
-open the same index.
+manifest is the commit point. Only one writer is allowed (`.writer.lock`,
+created with `O_EXCL`); many read-only readers can open the same index.
+
+## Graph storage
+
+Layer 0 holds every node, so it is stored as two flat arrays rather than
+Python lists:
+
+- `adj0`: one fixed-width `int32` row per node with `4·M` slots (unused slots
+  are `-1`). The width matches the lazy-pruning bound below.
+- `deg0`: the number of used slots in each row.
+
+Nodes above layer 0 (about `1/M` of them) keep their upper-layer neighbour
+lists in a dict. `open(readonly=True)` memory-maps `vectors.bin` and the
+layer-0 arrays in `graph.bin`, so opening is fast and resident memory grows
+only with the pages a search touches. A writable index copies both into RAM.
 
 ## Graph construction
 
@@ -33,20 +45,29 @@ GraphVec implements a multi-layer navigable small-world graph from scratch.
   layer (`construction_ef`).
 - **Neighbour selection**: a candidate is kept only if it is closer to the new
   node than to any neighbour already chosen; remaining slots are filled to keep
-  the graph connected. Links are bidirectional.
+  the graph connected. Links are bidirectional. Each pick blocks the
+  candidates it rules out with one matrix-vector product.
 - **Pruning**: neighbour lists are pruned back to `2M` (layer 0) or `M` (upper
   layers) with the same heuristic. Pruning is lazy: it runs only when a list
-  reaches twice its target size. In our 10k benchmark this kept full recall
-  and cut build time by about 40% compared with pruning on every insert.
+  would exceed twice its target size, which amortises its cost.
 
 ## Search
 
-- Greedy descent through the upper layers, then best-first traversal on layer 0
-  with a visited set, a candidate min-heap, and a bounded result max-heap.
-- `ef_search` sets the size of the result heap and controls the
+- Greedy descent through the upper layers, then best-first traversal of the
+  layer below with a visited mask, a frontier of unexpanded nodes, and the
+  `ef` closest nodes found so far.
+- **Batched expansion**: each round expands the 16 closest frontier nodes at
+  once. Their neighbours are gathered, filtered against the visited mask and
+  scored with one matrix-vector product, then merged into the results with
+  `argpartition`. Python-level work per round is a handful of array
+  operations instead of a heap update per neighbour, which is what made
+  0.1.0 slow. Expanding several nodes per round also explores slightly more
+  of the graph, so recall at a given `ef_search` is higher than with strict
+  one-at-a-time expansion.
+- `ef_search` sets how many results are kept and controls the
   quality/latency trade-off.
-- Traversal stops when the best remaining candidate is worse than the worst
-  result and the result heap is full.
+- Frontier nodes farther than the current `ef`-th result are dropped; the
+  search ends when the frontier is empty.
 - Deleted (tombstoned) nodes are still traversed but never returned.
 
 ## Exact search

@@ -74,7 +74,7 @@ JSONL records look like `{"id": "doc-1", "vector": [0.1, ...]}`; Parquet files n
 `vector` columns and the `parquet` extra. Most commands accept `--json`; see `graphvec --help`.
 
 ## Limitations
-- The graph and ID map are held in memory; only vectors can be memory-mapped.
+- Read-only opens memory-map vectors and the graph; writable indexes load everything into RAM.
 - One writer at a time. A crash leaves a stale lock; clear it with `graphvec unlock`.
 - Deleted IDs cannot be reused until `compact()`.
 - Insertion is slow (hundreds of vectors per second in our measurements).

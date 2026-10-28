@@ -76,6 +76,8 @@ class GraphIndex:
         validate_metric(metric)
         if dimensions <= 0:
             raise InvalidVectorError("dimensions must be positive")
+        if max_neighbors < 1 or construction_ef < 1:
+            raise ValueError("max_neighbors and construction_ef must be at least 1")
         p = Path(path)
         if p.exists() and any(p.iterdir()) if p.is_dir() else p.exists():
             if not overwrite:
@@ -120,10 +122,7 @@ class GraphIndex:
             if len(idx._vectors)
             else np.empty(0, dtype=np.float64)
         )
-        idx._graph.layers = loaded["layers"]
-        idx._graph.levels = loaded["levels"]
-        idx._graph.entry_point = loaded["entry_point"]
-        idx._graph.max_level = loaded["max_level"]
+        idx._graph = loaded["graph"]
         if not readonly:
             # writers need a mutable in-memory copy instead of the read-only memmap
             idx._vectors = np.array(idx._vectors, dtype=np.float32)
@@ -367,23 +366,16 @@ class GraphIndex:
             np.ascontiguousarray(self._vectors[:count], dtype=np.float32),
             list(self._ids),
             self._deleted[:count],
-            self._graph.layers,
-            self._graph.levels,
-            self._graph.entry_point,
-            self._graph.max_level,
+            self._graph,
         )
-        self._manifest_cache = manifest
+        self.format_version = int(manifest["format_version"])
 
     def validate(self, verify_checksums: bool = True) -> dict:
         """Validate in-memory + on-disk consistency. Returns a report dict."""
         self._ensure_open()
         errors: list[str] = []
         diag = self._graph.diagnostics()
-        for node, node_layers in enumerate(self._graph.layers):
-            for layer_list in node_layers:
-                for nb in layer_list:
-                    if nb < 0 or nb >= len(self._ids):
-                        errors.append(f"node {node} has out-of-range neighbour {nb}")
+        errors.extend(self._graph.check(len(self._ids)))
         if len(set(self._ids)) != len(self._ids):
             errors.append("duplicate external ids in memory")
         if self.path.exists() and (self.path / "manifest.json").exists():
@@ -418,12 +410,9 @@ class GraphIndex:
         if self._closed:
             return
         self._closed = True
-        vec = self._vectors
-        if isinstance(vec, np.memmap):
-            try:
-                vec._mmap.close()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        # dropping the last references unmaps read-only files
+        self._vectors = np.empty((0, self.dimensions), dtype=np.float32)
+        self._graph.release()
         storage.release_lock(self._lock)
         self._lock = None
 
