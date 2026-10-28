@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-28
 
-The index format is unchanged (version 2); 0.2 and this release read each
+The index format is unchanged (version 2); 0.2 and 0.3 read each
 other's indexes.
 
 - **Building indexes larger than RAM.** A writable index keeps its vectors

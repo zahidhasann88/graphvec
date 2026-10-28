@@ -33,7 +33,7 @@ for exotic big-endian hosts.
 
 ## Compatibility and migration
 
-- GraphVec 0.2 reads version 1 (0.1.x) and version 2 indexes.
+- GraphVec 0.2 and later read version 1 (0.1.x) and version 2 indexes.
 - It always writes version 2. Opening a version-1 index for writing and
   calling `save()` (or `compact()`) migrates it in place; read-only opens
   never modify files. Only `graph.bin` changes between the versions.

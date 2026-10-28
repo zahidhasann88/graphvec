@@ -93,12 +93,13 @@ What this shows:
 - GraphVec built the Gaussian index with a peak resident memory of 223 MB,
   and a read-only open took 0.15 s.
 
-## Unreleased: batch insertion and the on-disk working copy
+## 0.3.0: batch insertion and the on-disk working copy
 
 Same laptop, single-threaded BLAS (`OPENBLAS_NUM_THREADS=1`), 200 held-out
-queries. The JSON files record the version string as 0.2.0 because the
-version has not been bumped yet; `run-20k-128-gaussian-v0.2.0.json` is the
-real 0.2.0 release (`--graphvec-src`).
+queries. The JSON files record the version string as 0.2.0 because they
+were measured on the 0.3.0 code before the version was bumped;
+`run-20k-128-gaussian-v0.2.0.json` is the real 0.2.0 release
+(`--graphvec-src`).
 
 **Recall is unchanged by batching.** 20,000 × 128 Gaussian vectors
 (`run-20k-128-gaussian-*.json`), recall@10:
