@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "graphvec"
+name = "graphvec-ann"
 version = "0.1.0"
 description = "Local-first, file-based approximate nearest-neighbor vector search engine"
 readme = "README.md"

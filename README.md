@@ -4,15 +4,14 @@ GraphVec is a local, file-based vector search library for Python. It stores an
 index in a directory on disk and finds nearest neighbours with its own
 HNSW-style graph. It needs no database server, cloud service, or background process.
 
-It is written in pure Python and NumPy. That makes it easy to read and embed,
+It is written in pure Python (3.11+) and NumPy. That makes it easy to read and embed,
 but it is slower than compiled libraries such as FAISS or hnswlib.
 
 ## Installation
 
-Requires Python 3.11+.
 ```bash
-pip install .              # from a clone of this repository
-pip install -e ".[dev]"    # with test and lint tools
+pip install graphvec-ann           # the import name and command are `graphvec`
+pip install "graphvec-ann[parquet]"  # optional Parquet import
 ```
 
 ## Quick start
@@ -72,23 +71,24 @@ graphvec export ./index.gvec --output vectors.npy         # also writes vectors.
 ```
 
 JSONL records look like `{"id": "doc-1", "vector": [0.1, ...]}`; Parquet files need `id` and
-`vector` columns and `pip install ".[parquet]"`. Most commands accept `--json`; see `graphvec --help`.
+`vector` columns and the `parquet` extra. Most commands accept `--json`; see `graphvec --help`.
 
 ## Limitations
 - The graph and ID map are held in memory; only vectors can be memory-mapped.
 - One writer at a time. A crash leaves a stale lock; clear it with `graphvec unlock`.
 - Deleted IDs cannot be reused until `compact()`.
 - Insertion is slow (hundreds of vectors per second in our measurements).
-- More detail and crash-safety guarantees: [docs/limitations.md](docs/limitations.md).
+- More detail and crash-safety guarantees: [docs/limitations.md](https://github.com/zahidhasann88/graphvec/blob/main/docs/limitations.md).
 
 ## Documentation
 
-[Architecture and algorithms](docs/architecture.md) · [File format](docs/file-format.md) · [Benchmarks](docs/benchmarks.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
+[Architecture and algorithms](https://github.com/zahidhasann88/graphvec/blob/main/docs/architecture.md) · [File format](https://github.com/zahidhasann88/graphvec/blob/main/docs/file-format.md) · [Benchmarks](https://github.com/zahidhasann88/graphvec/blob/main/docs/benchmarks.md) · [Changelog](https://github.com/zahidhasann88/graphvec/blob/main/CHANGELOG.md) · [Security](https://github.com/zahidhasann88/graphvec/blob/main/SECURITY.md)
 
 ## Development
 
 Add tests for behaviour changes, and never commit benchmark numbers you did not measure.
 ```bash
+pip install -e ".[dev]"
 pytest                                   # add -m slow for large tests
 ruff check . && ruff format --check .
 mypy src/graphvec
@@ -96,4 +96,4 @@ mypy src/graphvec
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/zahidhasann88/graphvec/blob/main/LICENSE).

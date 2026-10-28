@@ -106,7 +106,7 @@ def import_cmd(
                     import pyarrow.parquet as pq
                 except ImportError as exc:
                     raise typer.BadParameter(
-                        'Parquet import needs pyarrow: pip install "graphvec[parquet]"'
+                        'Parquet import needs pyarrow: pip install "graphvec-ann[parquet]"'
                     ) from exc
                 pf = pq.ParquetFile(source)
                 for batch in pf.iter_batches(batch_size=batch_size, columns=["id", "vector"]):
