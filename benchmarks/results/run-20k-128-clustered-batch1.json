@@ -1,0 +1,71 @@
+{
+  "n": 20000,
+  "dims": 128,
+  "metric": "cosine",
+  "k": 10,
+  "max_neighbors": 16,
+  "construction_ef": 200,
+  "insert_batch": 1,
+  "memory_limit_mb": null,
+  "dataset": "clustered",
+  "queries": 200,
+  "seed": 42,
+  "environment": {
+    "graphvec_version": "0.2.0",
+    "python": "3.13.14",
+    "numpy": "2.5.4",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 142 Stepping 12, GenuineIntel",
+    "cpu_count": 8,
+    "blas_threads": "1",
+    "ram_gb": 15.8
+  },
+  "build_seconds": 43.6,
+  "insert_vectors_per_sec": 458.9,
+  "build_cpu_user_seconds": 42.9,
+  "build_cpu_system_seconds": 0.2,
+  "working_copy_on_disk": false,
+  "insert_rate_last_batch": 450.8,
+  "save_seconds": 0.15,
+  "private_mb_build_max_sampled": 76.9,
+  "peak_rss_mb_build": 79.1,
+  "open_readonly_seconds": 0.042,
+  "open_readonly_heap_mb": 3.6,
+  "index_bytes_on_disk": 15806884,
+  "graph_bytes_on_disk": 5357404,
+  "exact_search_ms_per_query": 4.85,
+  "by_ef_search": {
+    "10": {
+      "recall@1": 0.995,
+      "recall@10": 0.997,
+      "p50_ms": 0.82,
+      "p95_ms": 0.959,
+      "p99_ms": 1.059,
+      "qps_single_thread": 1203.6
+    },
+    "20": {
+      "recall@1": 1.0,
+      "recall@10": 0.9995,
+      "p50_ms": 0.886,
+      "p95_ms": 1.349,
+      "p99_ms": 1.657,
+      "qps_single_thread": 1058.7
+    },
+    "50": {
+      "recall@1": 1.0,
+      "recall@10": 1.0,
+      "p50_ms": 1.068,
+      "p95_ms": 1.193,
+      "p99_ms": 1.293,
+      "qps_single_thread": 929.3
+    },
+    "100": {
+      "recall@1": 1.0,
+      "recall@10": 1.0,
+      "p50_ms": 1.346,
+      "p95_ms": 1.906,
+      "p99_ms": 3.408,
+      "qps_single_thread": 660.4
+    }
+  }
+}

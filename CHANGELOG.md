@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+The index format is unchanged (version 2); 0.2 and this release read each
+other's indexes.
+
+- **Building indexes larger than RAM.** A writable index keeps its vectors
+  and layer-0 graph in a working copy: in RAM up to `memory_limit`
+  (a new `create()`/`open()` argument, default a quarter of physical
+  memory), then in memory-mapped files under `<index>/.work/`. `save()`
+  still writes new files and the manifest last, so the last commit
+  survives a crash; the next writer deletes a stale `.work/`. The ID map
+  stays in RAM. See docs/limitations.md for what remains in memory and the
+  disk space a build needs. Measured at 50k × 768: 70 MB of private memory
+  with the working copy on disk against 325 MB in RAM, at the same build
+  time.
+- **Batch insertion.** `add()`, `build()` and `compact()` take
+  `insert_batch` (1 to 64, default 1): a group of vectors searches layer
+  0 in lockstep, selects neighbours together, and also links to earlier
+  members of its group. `insert_batch=1` builds exactly the graph 0.2.0
+  built.
+  Recall matches 0.2.0. Measured speed is inconclusive so far: user CPU
+  time fell 15% on 20k × 128 vectors, but extra page faults on Windows
+  offset it; see docs/benchmarks.md.
+- Opening an index for writing no longer copies it into RAM up front when
+  it exceeds `memory_limit`; it checks free disk space for the working
+  copy and raises `InsufficientDiskSpaceError` if it does not fit.
+- `compact()` moves live rows in place instead of copying all vectors.
+- `save()` writes data files in 64 MiB chunks.
+- Benchmarks: `run.py` takes `--insert-batch` and `--memory-limit-mb`,
+  and records CPU time, private (non-file-backed) memory and whether the
+  working copy was on disk.
+
 ## 0.2.0 — 2026-10-28
 
 **Index format 2.** 0.2 reads 0.1 indexes and migrates them to format 2

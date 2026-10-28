@@ -95,15 +95,26 @@ def _estimate_save_bytes(vectors: np.ndarray, ids: list[str], graph: Graph) -> i
     return int(vectors.nbytes) + graph_bytes + id_bytes + n + headers
 
 
-def _check_disk_space(index_dir: Path, needed: int) -> None:
+def check_disk_space(index_dir: Path, needed: int) -> None:
     try:
         free = shutil.disk_usage(index_dir).free
     except OSError:
         return  # cannot determine; let the write itself fail if space runs out
     if free < needed:
         raise InsufficientDiskSpaceError(
-            f"Saving to {index_dir} needs about {needed:,} bytes but only {free:,} are free"
+            f"Writing to {index_dir} needs about {needed:,} bytes but only {free:,} are free"
         )
+
+
+_WRITE_BYTES = 64 << 20
+
+
+def _write_array(fh, arr: np.ndarray, dtype) -> None:
+    """Write ``arr`` a chunk of rows at a time, so a memmap is never read whole."""
+    row_bytes = max(1, arr[:1].nbytes)
+    step = max(1, _WRITE_BYTES // row_bytes)
+    for start in range(0, len(arr), step):
+        fh.write(np.ascontiguousarray(arr[start : start + step], dtype=dtype).data)
 
 
 def _write_graph(fh, graph: Graph, n: int) -> None:
@@ -119,9 +130,9 @@ def _write_graph(fh, graph: Graph, n: int) -> None:
             0,
         )
     )
-    fh.write(np.ascontiguousarray(graph.deg0[:n], dtype="<i4").data)
-    fh.write(np.ascontiguousarray(graph.adj0[:n], dtype="<i4").data)
-    fh.write(np.ascontiguousarray(graph.levels[:n], dtype=np.uint8).data)
+    _write_array(fh, graph.deg0[:n], "<i4")
+    _write_array(fh, graph.adj0[:n], "<i4")
+    _write_array(fh, graph.levels[:n], np.uint8)
     fh.write(struct.pack("<Q", len(graph.upper)))
     for node in sorted(graph.upper):
         lists = graph.upper[node]
@@ -141,12 +152,12 @@ def save_index(
     """Write data files then the manifest (commit point). Returns manifest."""
     try:
         index_dir.mkdir(parents=True, exist_ok=True)
-        _check_disk_space(index_dir, _estimate_save_bytes(vectors, ids, graph))
+        check_disk_space(index_dir, _estimate_save_bytes(vectors, ids, graph))
         n, d = vectors.shape
         tmp = index_dir / "vectors.bin.tmp"
         with open(tmp, "wb") as fh:
             fh.write(fmt.HEADER.pack(fmt.VEC_MAGIC, fmt.FORMAT_VERSION, n, d))
-            fh.write(np.ascontiguousarray(vectors, dtype="<f4").data)
+            _write_array(fh, vectors, "<f4")
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, index_dir / "vectors.bin")

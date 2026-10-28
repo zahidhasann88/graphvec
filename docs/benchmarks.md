@@ -93,14 +93,68 @@ What this shows:
 - GraphVec built the Gaussian index with a peak resident memory of 223 MB,
   and a read-only open took 0.15 s.
 
+## Unreleased: batch insertion and the on-disk working copy
+
+Same laptop, single-threaded BLAS (`OPENBLAS_NUM_THREADS=1`), 200 held-out
+queries. The JSON files record the version string as 0.2.0 because the
+version has not been bumped yet; `run-20k-128-gaussian-v0.2.0.json` is the
+real 0.2.0 release (`--graphvec-src`).
+
+**Recall is unchanged by batching.** 20,000 × 128 Gaussian vectors
+(`run-20k-128-gaussian-*.json`), recall@10:
+
+| ef_search | 0.2.0 | `insert_batch=1` | `insert_batch=32` | 32, working copy on disk |
+|---|---|---|---|---|
+| 10 | 0.327 | 0.327 | 0.332 | 0.332 |
+| 50 | 0.742 | 0.742 | 0.740 | 0.740 |
+| 100 | 0.868 | 0.868 | 0.871 | 0.871 |
+| 200 | 0.960 | 0.960 | 0.962 | 0.962 |
+
+`insert_batch=1` builds the same graph as 0.2.0. On clustered data
+(`run-20k-128-clustered-*.json`) both reach 0.997 at ef 10 and 1.000 from
+ef 50.
+
+**The speed-up is not established on this machine.** Build time for the
+20k Gaussian set:
+
+| | wall | CPU user | CPU system |
+|---|---|---|---|
+| 0.2.0 | 79.3 s | 73.4 s | 5.5 s |
+| `insert_batch=1` | 89.8 s | 83.9 s | 3.1 s |
+| `insert_batch=32` | 96.1 s | 71.2 s | 19.4 s |
+| 32, on disk | 98.7 s | 69.7 s | 25.5 s |
+
+Batching cut user CPU time by 15% here (13% on clustered data), but added
+about as much system time: on Windows, the larger temporary arrays of a
+lockstep round are page-faulted in fresh each time. An earlier in-process
+run on the same data measured user time 154 s → 60 s (2.0× throughput),
+but the laptop was under memory pressure and identical runs differed by up
+to 2×, so neither number is a reliable claim. It needs measuring on a quiet
+machine, and on Linux, whose allocator returns freed memory to the OS less
+eagerly.
+
+**The working copy on disk keeps the index out of private memory.**
+50,000 × 768 clustered vectors (147 MB of vectors), `insert_batch=32`
+(`run-50k-768-clustered-*.json`):
+
+| working copy | build | private memory (max sampled) | recall@10, ef 100 | p50 |
+|---|---|---|---|---|
+| RAM (`memory_limit` default) | 353.5 s | 324.7 MB | 1.000 | 2.17 ms |
+| disk (`--memory-limit-mb 0`) | 358.6 s | 70.0 MB | 1.000 | 2.67 ms |
+
+Private memory is memory the OS cannot page out to the index files; with
+the working copy on disk it stays near the interpreter's baseline while the
+vectors and graph live in mapped files. Build time was the same here. This
+does not yet show an index larger than RAM being built; the largest built
+is the 50k × 768 set above.
+
 ## Not yet measured
 
-- **100k at 384 and 768 dimensions, and 1M vectors.** These runs were
-  stopped on this laptop because the system ran low on memory. A writable
-  index keeps all vectors and the graph in RAM (see
-  [limitations](limitations.md)), so 1M × 768 needs over 3.3 GB for the
-  index alone. Nothing beyond 100,000 vectors is claimed until it is
-  measured.
+- **100k at 384 and 768 dimensions, 1M vectors, and an index larger than
+  RAM.** The on-disk working copy removes the RAM limit on building (see
+  [limitations](limitations.md)), but at the measured insertion rates a
+  1M-vector build takes hours on this laptop. Nothing beyond 100,000
+  vectors is claimed until it is measured.
 - **hnswlib**: no prebuilt wheel exists for Windows with Python 3.13;
   `compare.py` includes it automatically where it installs.
 

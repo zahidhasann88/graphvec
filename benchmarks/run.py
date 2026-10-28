@@ -8,11 +8,16 @@ read-only (memory-mapped) for querying, computes exact ground truth, then
 reports *measured* numbers only: build time, insertion rate, peak memory,
 open time, disk size, and recall@1 / recall@k with latency percentiles for
 each ``ef_search``. Records seed, parameters, versions and hardware.
+
+Set ``OPENBLAS_NUM_THREADS=1`` (or the MKL equivalent) for single-threaded
+numbers; multi-threaded BLAS makes the small products in graph search
+noisy, not faster.
 """
 
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import platform
@@ -57,6 +62,29 @@ def peak_rss_mb() -> float | None:
         return None
 
 
+def private_mb() -> float | None:
+    """Memory not backed by a file (excludes memory-mapped index pages).
+
+    Resident memory counts mapped file pages too, so it cannot show whether
+    the index itself lives in RAM; private memory can.
+    """
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        info = proc.memory_info()
+        if hasattr(info, "private"):  # Windows
+            return round(info.private / 2**20, 1)
+        return round(proc.memory_full_info().uss / 2**20, 1)
+    except (ImportError, OSError, AttributeError):
+        return None
+
+
+def has_working_copy() -> bool:
+    """Releases before 0.3 have no insert_batch or memory_limit (one at a time, all RAM)."""
+    return "insert_batch" in inspect.signature(GraphIndex.add).parameters
+
+
 def environment() -> dict:
     env = {
         "graphvec_version": graphvec.__version__,
@@ -65,6 +93,7 @@ def environment() -> dict:
         "platform": platform.platform(),
         "processor": platform.processor(),
         "cpu_count": os.cpu_count(),
+        "blas_threads": os.environ.get("OPENBLAS_NUM_THREADS", "default"),
     }
     try:
         import psutil
@@ -100,7 +129,10 @@ def measure(search, queries: np.ndarray, truth: list[list[str]], k: int) -> dict
 
 
 def build_graphvec(path: Path, vecs: np.ndarray, args) -> dict:
+    new_api = has_working_copy()
+    limit = None if args.memory_limit_mb is None else int(args.memory_limit_mb * 2**20)
     t0 = time.perf_counter()
+    cpu0 = os.times()
     idx = GraphIndex.create(
         path,
         dimensions=vecs.shape[1],
@@ -108,16 +140,24 @@ def build_graphvec(path: Path, vecs: np.ndarray, args) -> dict:
         max_neighbors=args.m,
         construction_ef=args.construction_ef,
         seed=args.seed,
+        **({"memory_limit": limit} if new_api else {}),
     )
+    batching = {"insert_batch": args.insert_batch} if new_api else {}
     last_rate = None
+    peak_private = private_mb()
     for start in range(0, len(vecs), args.batch_size):
         chunk = np.asarray(vecs[start : start + args.batch_size])
         t1 = time.perf_counter()
-        idx.add(chunk, ids=[f"v{i}" for i in range(start, start + len(chunk))])
+        idx.add(chunk, ids=[f"v{i}" for i in range(start, start + len(chunk))], **batching)
         last_rate = len(chunk) / (time.perf_counter() - t1)
+        now = private_mb()
+        if now is not None and (peak_private is None or now > peak_private):
+            peak_private = now
         done = start + len(chunk)
         print(f"  inserted {done}/{len(vecs)} ({last_rate:.0f}/s)", file=sys.stderr, flush=True)
     build_s = time.perf_counter() - t0
+    cpu1 = os.times()
+    on_disk = bool(getattr(getattr(idx, "_backing", None), "on_disk", False))
     t0 = time.perf_counter()
     idx.save()
     save_s = time.perf_counter() - t0
@@ -125,8 +165,12 @@ def build_graphvec(path: Path, vecs: np.ndarray, args) -> dict:
     return {
         "build_seconds": round(build_s, 1),
         "insert_vectors_per_sec": round(len(vecs) / build_s, 1),
+        "build_cpu_user_seconds": round(cpu1.user - cpu0.user, 1),
+        "build_cpu_system_seconds": round(cpu1.system - cpu0.system, 1),
+        "working_copy_on_disk": on_disk,
         "insert_rate_last_batch": round(last_rate or 0.0, 1),
         "save_seconds": round(save_s, 2),
+        "private_mb_build_max_sampled": peak_private,
     }
 
 
@@ -140,7 +184,16 @@ def main() -> None:
     ap.add_argument("--m", type=int, default=16, help="max_neighbors")
     ap.add_argument("--construction-ef", type=int, default=200)
     ap.add_argument("--queries", type=int, default=100)
-    ap.add_argument("--batch-size", type=int, default=10_000)
+    ap.add_argument("--batch-size", type=int, default=10_000, help="vectors per add() call")
+    ap.add_argument(
+        "--insert-batch", type=int, default=1, help="add(insert_batch=...); 1 = one at a time"
+    )
+    ap.add_argument(
+        "--memory-limit-mb",
+        type=float,
+        default=None,
+        help="create(memory_limit=...) in MiB; 0 keeps the working copy on disk",
+    )
     ap.add_argument("--uniform", action="store_true", help="Gaussian data instead of clusters")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--workdir", default=None, help="where data and index go (default: temp)")
@@ -173,6 +226,8 @@ def main() -> None:
         "k": args.k,
         "max_neighbors": args.m,
         "construction_ef": args.construction_ef,
+        "insert_batch": args.insert_batch if has_working_copy() else 1,
+        "memory_limit_mb": args.memory_limit_mb,
         "dataset": "gaussian" if args.uniform else "clustered",
         "queries": args.queries,
         "seed": args.seed,

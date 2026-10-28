@@ -73,14 +73,24 @@ def test_create_refuses_overwrite(tmp_path):
 def test_insufficient_disk_space_keeps_committed_data(tmp_path, monkeypatch):
     p = built(tmp_path)
     full = shutil.disk_usage(p)._replace(free=0)
-    monkeypatch.setattr(storage.shutil, "disk_usage", lambda _path: full)
     with GraphIndex.open(p) as idx:
         idx.delete("x0")
+        monkeypatch.setattr(storage.shutil, "disk_usage", lambda _path: full)
         with pytest.raises(InsufficientDiskSpaceError):
             idx.save()
-    monkeypatch.undo()
+        monkeypatch.undo()
     with GraphIndex.open(p, readonly=True, verify_checksums=True) as idx:
         assert len(idx) == 50
+
+
+def test_open_for_writing_needs_room_for_working_copy(tmp_path, monkeypatch):
+    p = built(tmp_path)
+    full = shutil.disk_usage(p)._replace(free=0)
+    monkeypatch.setattr(storage.shutil, "disk_usage", lambda _path: full)
+    with pytest.raises(InsufficientDiskSpaceError):
+        GraphIndex.open(p, memory_limit=0)  # working copy on disk
+    monkeypatch.undo()
+    GraphIndex.open(p).close()  # the failed open released the writer lock
 
 
 def test_force_unlock_clears_stale_lock(tmp_path):

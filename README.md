@@ -38,9 +38,9 @@ with GraphIndex.open("./vectors.gvec", readonly=True) as index:
 
 | Method | Purpose |
 |---|---|
-| `GraphIndex.create(path, dimensions, metric="cosine", max_neighbors=16, construction_ef=200, seed=42, overwrite=False)` | Create a new index directory |
-| `GraphIndex.open(path, readonly=False, verify_checksums=False)` | Open an index (read-only mode memory-maps vectors) |
-| `add(vectors, ids=None, replace=False)` | Insert vectors; duplicate IDs raise `DuplicateIDError` unless `replace=True` |
+| `GraphIndex.create(path, dimensions, metric="cosine", max_neighbors=16, construction_ef=200, seed=42, overwrite=False, memory_limit=None)` | Create a new index directory |
+| `GraphIndex.open(path, readonly=False, verify_checksums=False, memory_limit=None)` | Open an index (read-only mode memory-maps vectors) |
+| `add(vectors, ids=None, replace=False, insert_batch=1)` | Insert vectors; duplicate IDs raise `DuplicateIDError` unless `replace=True` |
 | `search(query, k=10, ef_search=100)` / `search_batch(queries, ...)` | Approximate search; returns `SearchResult(id, score, internal_id)` |
 | `search_exact(query, k=10)` | Brute-force search, useful to measure recall |
 | `get(id)` / `contains(id)` / `delete(ids)` / `iter_ids()` | Read, check, delete, or list IDs (deletes are tombstones) |
@@ -74,7 +74,9 @@ JSONL records look like `{"id": "doc-1", "vector": [0.1, ...]}`; Parquet files n
 `vector` columns and the `parquet` extra. Most commands accept `--json`; see `graphvec --help`.
 
 ## Limitations
-- Read-only opens memory-map vectors and the graph; writable indexes load everything into RAM.
+- Read-only opens memory-map vectors and the graph. Writable indexes keep them in RAM up to
+  `memory_limit` (default: a quarter of physical memory), then in memory-mapped working files,
+  so building can exceed RAM; the ID map always stays in RAM.
 - One writer at a time. A crash leaves a stale lock; clear it with `graphvec unlock`.
 - Deleted IDs cannot be reused until `compact()`.
 - Insertion is slow (hundreds of vectors per second in our measurements).

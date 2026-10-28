@@ -19,9 +19,15 @@ from graphvec.exceptions import (
     MissingIDError,
 )
 from graphvec.format import FORMAT_VERSION
-from graphvec.graph import Graph
+from graphvec.graph import INSERT_BATCH, MAX_INSERT_BATCH, Graph
 from graphvec.metrics import normalize_rows, normalize_vector, scores_from_distances
 from graphvec.validation import validate_metric, validate_queries, validate_query, validate_vectors
+from graphvec.workfile import WORK_DIR, WorkingCopy
+
+
+def _check_insert_batch(insert_batch: int) -> None:
+    if not 1 <= insert_batch <= MAX_INSERT_BATCH:
+        raise ValueError("insert_batch must be between 1 and 64")
 
 
 @dataclass(frozen=True)
@@ -40,6 +46,12 @@ class GraphIndex:
     ``close``. ``build()`` rebuilds the graph from all live vectors (useful
     after many deletions); ``save()`` is the commit point -- unsaved changes
     are lost on ``close()``.
+
+    A writable index keeps its vectors and layer-0 graph in a working copy:
+    in RAM up to ``memory_limit`` bytes (default: a quarter of physical
+    memory), then in memory-mapped files under ``<path>/.work/``, so it can
+    grow beyond RAM (see workfile.py). ``save()`` copies the working copy
+    into new committed files.
     """
 
     def __init__(self, path, dimensions, metric, max_neighbors, construction_ef, seed, readonly):
@@ -53,6 +65,7 @@ class GraphIndex:
         self.format_version = FORMAT_VERSION
         self._closed = False
         self._lock = None
+        self._backing: WorkingCopy | None = None
         self._graph = Graph(dimensions, metric, max_neighbors, construction_ef, seed)
         # in-memory state (vectors may be a memmap in readonly mode)
         self._vectors: np.ndarray = np.empty((0, dimensions), dtype=np.float32)
@@ -72,6 +85,7 @@ class GraphIndex:
         construction_ef: int = 200,
         seed: int = 42,
         overwrite: bool = False,
+        memory_limit: int | None = None,
     ) -> GraphIndex:
         validate_metric(metric)
         if dimensions <= 0:
@@ -91,15 +105,34 @@ class GraphIndex:
         p.mkdir(parents=True, exist_ok=True)
         idx = cls(p, dimensions, metric, max_neighbors, construction_ef, seed, readonly=False)
         idx._lock = storage.acquire_lock(p)
+        try:
+            idx._backing = WorkingCopy(p / WORK_DIR, memory_limit)
+        except BaseException:
+            idx.close()
+            raise
+        idx._graph = idx._new_graph()
         idx.save()  # initial empty commit so open() works immediately
         return idx
 
     @classmethod
-    def open(cls, path, readonly: bool = False, verify_checksums: bool = False) -> GraphIndex:
+    def open(
+        cls,
+        path,
+        readonly: bool = False,
+        verify_checksums: bool = False,
+        memory_limit: int | None = None,
+    ) -> GraphIndex:
+        """Open an index. ``memory_limit`` applies to writers; see the class docs."""
         p = Path(path)
         if not p.is_dir():
             raise FileNotFoundError(f"Index directory not found: {p}")
-        loaded = storage.load_index(p, readonly=readonly, verify_checksums=verify_checksums)
+        lock = None if readonly else storage.acquire_lock(p)
+        try:
+            # writers copy the committed files into working files, so map them either way
+            loaded = storage.load_index(p, readonly=True, verify_checksums=verify_checksums)
+        except BaseException:
+            storage.release_lock(lock)
+            raise
         m = loaded["manifest"]
         idx = cls(
             p,
@@ -124,10 +157,36 @@ class GraphIndex:
         )
         idx._graph = loaded["graph"]
         if not readonly:
-            # writers need a mutable in-memory copy instead of the read-only memmap
-            idx._vectors = np.array(idx._vectors, dtype=np.float32)
-            idx._lock = storage.acquire_lock(p)
+            idx._lock = lock
+            try:
+                idx._start_working_copy(memory_limit)
+            except BaseException:
+                idx.close()
+                raise
         return idx
+
+    def _start_working_copy(self, memory_limit: int | None) -> None:
+        """Copy the committed (memory-mapped) arrays into a working copy."""
+        n = len(self._ids)
+        self._backing = WorkingCopy(self.path / WORK_DIR, memory_limit)
+        needed = int(self._vectors.nbytes) + n * (5 + 4 * self._graph.width)
+        if needed > self._backing.memory_limit:
+            storage.check_disk_space(self.path, needed)
+        self._capacity = max(n, 16)
+        self._vectors = self._backing.grow("vectors", self._vectors, n, self._capacity)
+        self._norms_sq = np.concatenate((self._norms_sq, np.zeros(self._capacity - n)))
+        self._deleted = np.concatenate((self._deleted, np.ones(self._capacity - n, dtype=bool)))
+        self._graph.use_backing(self._backing)
+
+    def _new_graph(self) -> Graph:
+        return Graph(
+            self.dimensions,
+            self.metric,
+            self.max_neighbors,
+            self.construction_ef,
+            self.seed,
+            backing=self._backing,
+        )
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -155,10 +214,8 @@ class GraphIndex:
         if need <= self._capacity:
             return
         new_cap = max(need, max(16, self._capacity * 2))
-        new = np.zeros((new_cap, self.dimensions), dtype=np.float32)
-        if len(self._ids):
-            new[: len(self._ids)] = self._vectors[: len(self._ids)]
-        self._vectors = new
+        assert self._backing is not None
+        self._vectors = self._backing.grow("vectors", self._vectors, len(self._ids), new_cap)
         self._capacity = new_cap
         nn = np.zeros(new_cap, dtype=np.float64)
         nn[: len(self._norms_sq)] = self._norms_sq
@@ -167,13 +224,18 @@ class GraphIndex:
         nd[: len(self._deleted)] = self._deleted
         self._deleted = nd
 
-    def add(self, vectors, ids=None, replace: bool = False) -> list[str]:
+    def add(
+        self, vectors, ids=None, replace: bool = False, insert_batch: int = INSERT_BATCH
+    ) -> list[str]:
         """Insert vectors incrementally into the graph.
 
         Duplicate IDs raise :class:`DuplicateIDError` unless ``replace=True``
-        (old row is tombstoned, new row inserted).
+        (old row is tombstoned, new row inserted). ``insert_batch`` (1-64)
+        is how many vectors search the graph together; 1 inserts one at a
+        time, exactly as 0.2.0 did.
         """
         self._ensure_writable()
+        _check_insert_batch(insert_batch)
         arr = validate_vectors(np.asarray(vectors), self.dimensions)
         n = arr.shape[0]
         if ids is None:
@@ -198,39 +260,37 @@ class GraphIndex:
                     self.delete(e)
         prepared = self._prepare(arr)
         self._grow(n)
-        for row, ext in zip(prepared, ext_ids, strict=False):
-            internal = len(self._ids)
-            self._vectors[internal] = row
-            self._norms_sq[internal] = float(row @ row)
-            self._ids.append(ext)
-            self._id_to_internal[ext] = internal
-            self._deleted[internal] = False
-            # the graph must only see rows inserted so far, not unused capacity
-            count = len(self._ids)
-            self._graph.insert(
-                internal,
-                self._vectors[:count],
-                self._norms_sq[:count],
-                self._deleted[:count],
-            )
+        start, stop = len(self._ids), len(self._ids) + n
+        self._vectors[start:stop] = prepared
+        self._norms_sq[start:stop] = np.einsum("ij,ij->i", prepared, prepared)
+        self._deleted[start:stop] = False
+        self._ids.extend(ext_ids)
+        self._id_to_internal.update(zip(ext_ids, range(start, stop), strict=True))
+        # the graph must only see rows inserted so far, not unused capacity
+        self._graph.insert_batch(
+            start, stop, self._vectors[:stop], self._norms_sq[:stop], batch=insert_batch
+        )
         return ext_ids
 
-    def build(self) -> None:
+    def build(self, insert_batch: int = INSERT_BATCH) -> None:
         """Rebuild the graph from scratch over all live+tombstoned rows.
 
         Tombstoned rows remain in the graph as traversal waypoints until
         ``compact()``; rebuilding re-runs insertion in internal-id order
-        with a freshly seeded RNG (deterministic for a given dataset).
+        with a freshly seeded RNG (deterministic for a given dataset and
+        ``insert_batch``).
         """
         self._ensure_writable()
-        self._graph = Graph(
-            self.dimensions, self.metric, self.max_neighbors, self.construction_ef, self.seed
-        )
+        _check_insert_batch(insert_batch)
+        self._rebuild_graph(insert_batch)
+
+    def _rebuild_graph(self, insert_batch: int) -> None:
+        self._graph.release()  # lets the old graph's working files be removed
+        self._graph = self._new_graph()
         count = len(self._ids)
-        for internal in range(count):
-            self._graph.insert(
-                internal, self._vectors[:count], self._norms_sq[:count], self._deleted[:count]
-            )
+        self._graph.insert_batch(
+            0, count, self._vectors[:count], self._norms_sq[:count], batch=insert_batch
+        )
 
     def delete(self, ids) -> int:
         """Tombstone one ID (``str``) or many. Returns number deleted."""
@@ -247,32 +307,25 @@ class GraphIndex:
             count += 1
         return count
 
-    def compact(self) -> None:
-        """Physically drop tombstoned rows and rebuild the graph."""
+    def compact(self, insert_batch: int = INSERT_BATCH) -> None:
+        """Physically drop tombstoned rows, rebuild the graph, and save."""
         self._ensure_writable()
-        live = [i for i in range(len(self._ids)) if not self._deleted[i]]
-        vecs = (
-            np.array(self._vectors[live], dtype=np.float32)
-            if live
-            else np.empty((0, self.dimensions), np.float32)
-        )
-        ext = [self._ids[i] for i in live]
-        self._vectors = vecs
-        self._capacity = len(ext)
-        self._ids = []
-        self._id_to_internal = {}
-        self._norms_sq = (
-            np.einsum("ij,ij->i", vecs, vecs).astype(np.float64) if live else np.empty(0)
-        )
-        self._deleted = np.zeros(len(ext), dtype=bool)
-        # rows are already normalised, so insert directly instead of via add()
-        self._graph = Graph(
-            self.dimensions, self.metric, self.max_neighbors, self.construction_ef, self.seed
-        )
-        for internal, ext_id in enumerate(ext):
-            self._ids.append(ext_id)
-            self._id_to_internal[ext_id] = internal
-            self._graph.insert(internal, self._vectors, self._norms_sq, self._deleted)
+        _check_insert_batch(insert_batch)
+        count = len(self._ids)
+        live = np.flatnonzero(~self._deleted[:count])
+        # Move live rows down in place, a chunk at a time. Row live[j] >= j,
+        # so a chunk never overwrites a row that a later chunk still reads.
+        step = max(1, (64 << 20) // (4 * self.dimensions))
+        for start in range(0, live.size, step):
+            src = live[start : start + step]
+            self._vectors[start : start + src.size] = self._vectors[src]
+            self._norms_sq[start : start + src.size] = self._norms_sq[src]
+        self._ids = [self._ids[i] for i in live.tolist()]
+        self._id_to_internal = {e: i for i, e in enumerate(self._ids)}
+        self._deleted[:] = True
+        self._deleted[: live.size] = False
+        # rows are already normalised, so rebuild directly instead of via add()
+        self._rebuild_graph(insert_batch)
         self.save()
 
     def get(self, id: str) -> np.ndarray:
@@ -363,8 +416,8 @@ class GraphIndex:
         manifest = storage.save_index(
             self.path,
             self._manifest(),
-            np.ascontiguousarray(self._vectors[:count], dtype=np.float32),
-            list(self._ids),
+            self._vectors[:count],
+            self._ids,
             self._deleted[:count],
             self._graph,
         )
@@ -410,9 +463,12 @@ class GraphIndex:
         if self._closed:
             return
         self._closed = True
-        # dropping the last references unmaps read-only files
+        # dropping the last references unmaps read-only and working files
         self._vectors = np.empty((0, self.dimensions), dtype=np.float32)
         self._graph.release()
+        if self._backing is not None:
+            self._backing.close()
+            self._backing = None
         storage.release_lock(self._lock)
         self._lock = None
 

@@ -8,7 +8,10 @@ byte-level layouts are specified in `src/graphvec/format.py`.
 `manifest.json` records dimensions, metric, counts, parameters and SHA-256
 checksums of the data files, and is written last via temp-file + atomic
 rename + fsync — it is the commit point. Leftover `*.tmp` files from
-interrupted writes are ignored on open.
+interrupted writes are ignored on open. A writer may also keep a `.work/`
+directory of raw, uncommitted working files (see
+[architecture](architecture.md#working-copy)); it is not part of the
+format, readers ignore it, and the next writer deletes a stale one.
 
 ## graph.bin (version 2)
 
