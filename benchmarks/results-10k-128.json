@@ -1,0 +1,20 @@
+{
+  "graphvec_version": "0.1.0",
+  "python": "3.13.16",
+  "numpy": "2.3.5",
+  "platform": "Linux-6.1.158+-x86_64-with-glibc2.41",
+  "n": 10000,
+  "dims": 128,
+  "metric": "cosine",
+  "k": 10,
+  "ef_search": 100,
+  "seed": 42,
+  "build_seconds": 36.717521715999965,
+  "insert_vectors_per_sec": 272.3495359340229,
+  "p50_ms": 1.0697595000124238,
+  "p95_ms": 1.1625573500282371,
+  "p99_ms": 1.2073424599986997,
+  "qps_single": 937.2897571219182,
+  "recall@10": 1.0,
+  "index_bytes_on_disk": 7129608
+}

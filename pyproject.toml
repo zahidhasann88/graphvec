@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "graphvec"
+version = "0.1.0"
+description = "Local-first, file-based approximate nearest-neighbor vector search engine"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Zahid Hasan", email = "jahidhasann67@gmail.com" }]
+keywords = ["vector-search", "ann", "hnsw", "embeddings"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = ["numpy>=1.24", "typer>=0.9", "rich>=13"]
+
+[project.urls]
+Homepage = "https://github.com/zahidhasann88/graphvec"
+Source = "https://github.com/zahidhasann88/graphvec"
+Issues = "https://github.com/zahidhasann88/graphvec/issues"
+Changelog = "https://github.com/zahidhasann88/graphvec/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "hypothesis>=6", "ruff>=0.4", "mypy>=1.10", "pytest-benchmark>=4", "build>=1.2"]
+bench = ["hnswlib", "faiss-cpu"]
+parquet = ["pyarrow"]
+
+[project.scripts]
+graphvec = "graphvec.cli:app"
+
+[tool.hatch.build]
+exclude = ["/build-docs.txt", "/.cache", "/dist", "/.venv", "*.gvec", "/.hypothesis", "/.pytest_cache", "/.mypy_cache", "/.ruff_cache", "__pycache__"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/graphvec"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B017"]  # pytest.raises(Exception) for API-surface checks
+"benchmarks/**" = ["E402"]  # sys.path setup before local imports
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_return_any = true
+ignore_missing_imports = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: slow / large tests (deselect with -m 'not slow')"]
+addopts = "-q"

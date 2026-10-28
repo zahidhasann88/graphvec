@@ -1,0 +1,41 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: ruff check src tests benchmarks examples
+      - run: ruff format --check src tests benchmarks examples
+      - run: mypy src/graphvec
+      - run: pytest -q
+      - run: python -m build
+      - name: Validate installed wheel outside the repo
+        shell: bash
+        run: |
+          WHEEL="$(pwd)/$(ls dist/*.whl)"
+          cd "$RUNNER_TEMP"
+          python -m venv gv-venv
+          if [ -d gv-venv/Scripts ]; then BIN=gv-venv/Scripts; else BIN=gv-venv/bin; fi
+          "$BIN/python" -m pip install --quiet "$WHEEL"
+          "$BIN/python" -c "import graphvec, pathlib; assert 'site-packages' in pathlib.Path(graphvec.__file__).as_posix(); print(graphvec.__version__)"
+          "$BIN/graphvec" version
+          "$BIN/python" - <<'PY'
+          import numpy as np
+          from graphvec import GraphIndex
+          vecs = np.random.default_rng(0).random((200, 16), dtype=np.float32)
+          with GraphIndex.create("smoke.gvec", dimensions=16, overwrite=True) as idx:
+              idx.add(vecs, ids=[f"v{i}" for i in range(200)])
+              idx.save()
+          with GraphIndex.open("smoke.gvec", readonly=True) as idx:
+              assert idx.search(vecs[7], k=1)[0].id == "v7"
+          print("wheel smoke test ok")
+          PY
